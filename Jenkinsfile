@@ -194,3 +194,86 @@ pipeline {
         }
     }
 }
+
+// ------ Microservice with Email notification -------
+
+pipeline {
+    agent any
+
+    environment {
+        GIT_REPO                = 'https://github.com/Crawlerbeast-m/Spring-Project-2.git'
+        GIT_CREDENTIALS         = 'Github'
+        DOCKER_REPO             = 'manish439/spring-project'
+        DOCKER_CREDENTIALS      = 'Docker'
+        KUBECONFIG_CREDENTIALS  = 'kubeconfig-live'
+        AWS_CREDS               = 'aws-creds'
+        AWS_REGION              = 'us-east-1'
+        NOTIFY_EMAIL            = 'your-email@gmail.com'
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+
+        stage('Checkout Source') {
+            steps {
+                git branch: 'master', credentialsId: "${GIT_CREDENTIALS}", url: "${GIT_REPO}"
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                sh 'mvn clean package -DskipTests'
+            }
+            post {
+                success {
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    docker.withRegistry('', "${DOCKER_CREDENTIALS}") {
+                        def app = docker.build("${DOCKER_REPO}:${BUILD_NUMBER}")
+                        app.push()
+                        app.push('latest')
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Amazon EKS') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDS}"]]) {
+                    sh '''
+                        aws eks update-kubeconfig --name java-spring-cluster --region us-east-1
+                        kubectl get ns
+                        kubectl apply -f k8s.yaml
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+           emailext (
+                to: "${NOTIFY_EMAIL}",
+                subject: "SUCCESS: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "The pipeline completed successfully.\nCheck console: ${env.BUILD_URL}"
+            )
+        }
+
+        failure {
+           emailext (
+                to: "${NOTIFY_EMAIL}",
+                subject: "FAILED: Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                body: "The pipeline has failed!\nCheck logs: ${env.BUILD_URL}"
+            )
+        }
+    }
+}

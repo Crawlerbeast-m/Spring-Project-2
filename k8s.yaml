@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-project
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: spring-project
+  template:
+    metadata:
+      labels:
+        app: spring-project
+    spec:
+      containers:
+      - name: spring-project
+        image: manish439/spring-project:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring-project-service
+spec:
+  selector:
+    app: spring-project
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
